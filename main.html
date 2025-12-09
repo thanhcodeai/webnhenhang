@@ -1,0 +1,470 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>cre: thành trẩu</title>
+    <style>
+      html,
+      body {
+        height: 100%;
+        margin: 0;
+        background: #0b1220;
+        font-family: system-ui, -apple-system, "Segoe UI", Roboto,
+          "Helvetica Neue", Arial;
+      }
+      canvas {
+        position: fixed;
+        inset: 0;
+        width: 100%;
+        height: 100%;
+        display: block;
+        pointer-events: none;
+      }
+      #play-overlay {
+        position: fixed;
+        inset: 0;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        pointer-events: none;
+        z-index: 9999;
+      }
+      #play-btn {
+        pointer-events: auto;
+        padding: 12px 18px;
+        border-radius: 10px;
+        border: none;
+        background: rgba(0, 0, 0, 0.55);
+        color: #fff;
+        font-size: 16px;
+        cursor: pointer;
+      }
+      #audio-control,
+      #fun-controls {
+        position: fixed;
+        z-index: 9999;
+        display: flex;
+        gap: 8px;
+      }
+      #audio-control {
+        right: 18px;
+        top: 18px;
+        display: none;
+      }
+      #fun-controls {
+        left: 18px;
+        top: 18px;
+      }
+      .ctrl-btn,
+      #mute-btn {
+        padding: 8px 10px;
+        border-radius: 8px;
+        border: none;
+        background: rgba(255, 255, 255, 0.08);
+        color: #fff;
+        cursor: pointer;
+      }
+      #message {
+        position: fixed;
+        left: 50%;
+        top: 18%;
+        transform: translateX(-50%);
+        padding: 12px 18px;
+        border-radius: 12px;
+        background: rgba(0, 0, 0, 0.5);
+        color: #fff;
+        opacity: 0;
+        transition: 0.3s;
+        font-size: 30px;
+      }
+    </style>
+  </head>
+
+  <body>
+    <canvas id="snow"></canvas>
+
+    <audio id="bg-audio" src="song.mp3" loop></audio>
+
+    <div id="play-overlay">
+      <button id="play-btn">Phát nhạc</button>
+    </div>
+
+    <div id="audio-control">
+      <button id="mute-btn">Tắt âm</button>
+    </div>
+
+    <div id="fun-controls">
+      <button id="more-snow" class="ctrl-btn">Tăng tuyết</button>
+      <button id="less-snow" class="ctrl-btn">Giảm tuyết</button>
+      <button id="confetti" class="ctrl-btn">Pháo hoa</button>
+      <button id="balloons" class="ctrl-btn">Bóng bay</button>
+    </div>
+
+    <div id="message"></div>
+
+    <script>
+      const canvas = document.getElementById("snow");
+      const ctx = canvas.getContext("2d");
+
+      /* ---------------------------
+         Khai báo biến chung trước
+         --------------------------- */
+      let flakes = [];
+      let intensity = 1;
+      let baseCount = 0;
+      let last = performance.now();
+      let windGlobal = 0;
+
+      /* ---------------------------
+         Class Flake phải nằm ở đây
+         (trước khi recalcCount dùng nó)
+         --------------------------- */
+      class Flake {
+        constructor(init = true) {
+          this.reset(init);
+        }
+        reset(init = false) {
+          this.x = Math.random() * canvas.width;
+          this.y = init ? Math.random() * canvas.height : -10;
+          this.radius = 1 + Math.random() * 3;
+          this.speed = 0.5 + Math.random() * 1.8;
+          this.angle = Math.random() * Math.PI * 2;
+          this.sizeFactor = 0.6 + Math.random() * 1.4;
+          this.wind = (Math.random() - 0.5) * 0.6;
+          this.opacity = 0.4 + Math.random() * 0.6;
+        }
+        update(dt) {
+          this.angle += 0.001 * dt;
+          this.x +=
+            Math.sin(this.angle) * 0.3 * this.sizeFactor +
+            this.wind +
+            windGlobal * (0.2 + this.sizeFactor * 0.3);
+          this.y += this.speed * this.sizeFactor * (dt / 16);
+          if (
+            this.y - this.radius > canvas.height ||
+            this.x < -50 ||
+            this.x > canvas.width + 50
+          )
+            this.reset();
+        }
+        draw() {
+          const g = ctx.createRadialGradient(
+            this.x,
+            this.y,
+            0,
+            this.x,
+            this.y,
+            this.radius * 3
+          );
+          g.addColorStop(0, `rgba(255,255,255,${this.opacity})`);
+          g.addColorStop(0.8, `rgba(255,255,255,${this.opacity * 0.2})`);
+          g.addColorStop(1, "rgba(255,255,255,0)");
+          ctx.fillStyle = g;
+          ctx.beginPath();
+          ctx.arc(this.x, this.y, this.radius * 1.6, 0, Math.PI * 2);
+          ctx.fill();
+        }
+      }
+
+      /* ---------------------------
+         Hàm tính toán số lượng flakes
+         --------------------------- */
+      function recalcCount() {
+        baseCount = Math.floor((canvas.width * canvas.height) / 9000) + 60;
+        const target = Math.max(20, Math.floor(baseCount * intensity));
+        while (flakes.length < target) flakes.push(new Flake(true));
+        while (flakes.length > target) flakes.pop();
+      }
+
+      /* ---------------------------
+         Resize + init
+         --------------------------- */
+      function resize() {
+        canvas.width = innerWidth;
+        canvas.height = innerHeight;
+        recalcCount();
+      }
+      addEventListener("resize", resize);
+      resize(); // an toàn vì Flake đã khai báo
+
+      /* ---------------------------
+         Gió nhỏ tự thay đổi
+         --------------------------- */
+      setInterval(() => {
+        windGlobal += (Math.random() - 0.5) * 0.6;
+        windGlobal = Math.max(-1.5, Math.min(1.5, windGlobal));
+      }, 2000);
+
+      /* ---------------------------
+         Màu sắc confetti & balloons (giữ nguyên logic cũ)
+         --------------------------- */
+      class Particle {
+        constructor(x, y, vx, vy, color, life = 900) {
+          this.x = x;
+          this.y = y;
+          this.vx = vx;
+          this.vy = vy;
+          this.color = color;
+          this.life = life;
+          this.age = 0;
+          this.size = 2 + Math.random() * 4;
+        }
+        update(dt) {
+          this.x += this.vx * (dt / 16);
+          this.y += this.vy * (dt / 16);
+          this.vy += 0.02 * (dt / 16);
+          this.age += dt;
+        }
+        draw() {
+          ctx.fillStyle = this.color;
+          ctx.fillRect(this.x, this.y, this.size, this.size);
+        }
+        alive() {
+          return this.age < this.life;
+        }
+      }
+      const confetti = [];
+      function confettiBurst(x, y, count = 40) {
+        const colors = [
+          "#ff4d4f",
+          "#ffd666",
+          "#73d13d",
+          "#40a9ff",
+          "#9254de",
+          "#ff7a45",
+        ];
+        for (let i = 0; i < count; i++) {
+          const a = Math.random() * Math.PI * 2;
+          const s = 2 + Math.random() * 6;
+          confetti.push(
+            new Particle(
+              x,
+              y,
+              Math.cos(a) * s,
+              Math.sin(a) * s - 2,
+              colors[Math.floor(Math.random() * colors.length)],
+              700 + Math.random() * 600
+            )
+          );
+        }
+      }
+
+      class Balloon {
+        constructor(x, y, color) {
+          this.x = x;
+          this.y = y;
+          this.color = color;
+          this.vy = -0.3 - Math.random() * 0.8;
+          this.age = 0;
+        }
+        update(dt) {
+          this.y += this.vy * (dt / 16);
+          this.age += dt;
+        }
+        draw() {
+          ctx.beginPath();
+          ctx.fillStyle = this.color;
+          ctx.ellipse(this.x, this.y, 14, 18, 0, 0, Math.PI * 2);
+          ctx.fill();
+          ctx.strokeStyle = "rgba(0,0,0,0.15)";
+          ctx.lineWidth = 1;
+          ctx.stroke();
+          ctx.strokeStyle = "rgba(255,255,255,0.08)";
+          ctx.beginPath();
+          ctx.moveTo(this.x, this.y + 18);
+          ctx.lineTo(this.x, this.y + 34);
+          ctx.stroke();
+        }
+        hit(px, py) {
+          return Math.hypot(this.x - px, this.y - py) < 18;
+        }
+      }
+      const balloons = [];
+      const balloonColors = [
+        "#FF6B6B",
+        "#FFD43B",
+        "#5EE3B8",
+        "#7CC7FF",
+        "#C084FC",
+      ];
+      let balloonMode = false;
+      function spawnBalloon() {
+        if (!balloonMode) return;
+        const x = 40 + Math.random() * (canvas.width - 80);
+        const y = canvas.height + 30;
+        balloons.push(
+          new Balloon(
+            x,
+            y,
+            balloonColors[Math.floor(Math.random() * balloonColors.length)]
+          )
+        );
+        if (balloons.length > 20) balloons.shift();
+      }
+      setInterval(spawnBalloon, 1400);
+
+      /* ---------------------------
+         Message helper
+         --------------------------- */
+      const messageEl = document.getElementById("message");
+      let msgTimeout = null;
+      function showMessage(txt, ms = 2200) {
+        messageEl.textContent = txt;
+        messageEl.style.opacity = "1";
+        messageEl.style.transform = "translateX(-50%) translateY(0)";
+        clearTimeout(msgTimeout);
+        msgTimeout = setTimeout(() => {
+          messageEl.style.opacity = "0";
+          messageEl.style.transform = "translateX(-50%) translateY(-6px)";
+        }, ms);
+      }
+
+      /* ---------------------------
+         Main render loop
+         --------------------------- */
+      function loop(now) {
+        const dt = Math.min(40, now - last);
+        last = now;
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+        for (let f of flakes) {
+          f.update(dt);
+          f.draw();
+        }
+
+        for (let i = confetti.length - 1; i >= 0; i--) {
+          confetti[i].update(dt);
+          if (!confetti[i].alive()) confetti.splice(i, 1);
+          else confetti[i].draw();
+        }
+
+        for (let i = balloons.length - 1; i >= 0; i--) {
+          const b = balloons[i];
+          b.update(dt);
+          if (b.y < -40) balloons.splice(i, 1);
+          else b.draw();
+        }
+
+        requestAnimationFrame(loop);
+      }
+      requestAnimationFrame(loop);
+
+      /* ---------------------------
+         Interaction: click to confetti or pop balloon
+         --------------------------- */
+      canvas.style.pointerEvents = "auto";
+      canvas.addEventListener("click", (e) => {
+        const rect = canvas.getBoundingClientRect();
+        const x = e.clientX - rect.left;
+        const y = e.clientY - rect.top;
+
+        for (let i = balloons.length - 1; i >= 0; i--) {
+          if (balloons[i].hit(x, y)) {
+            confettiBurst(balloons[i].x, balloons[i].y, 26);
+            balloons.splice(i, 1);
+            showMessage("Bùng nổ! 🎈");
+            return;
+          }
+        }
+
+        confettiBurst(x, y, 36);
+        showMessage("Vui vẻ nào! ✨");
+      });
+
+      /* ---------------------------
+         Buttons
+         --------------------------- */
+      document.getElementById("more-snow").addEventListener("click", () => {
+        intensity = Math.min(3, intensity * 1.4);
+        recalcCount();
+      });
+      document.getElementById("less-snow").addEventListener("click", () => {
+        intensity = Math.max(0.4, intensity / 1.6);
+        recalcCount();
+      });
+      document.getElementById("confetti").addEventListener("click", () => {
+        confettiBurst(innerWidth / 2, innerHeight / 2, 120);
+      });
+      document.getElementById("balloons").addEventListener("click", () => {
+        balloonMode = !balloonMode;
+      });
+
+      /* ---------------------------
+         Audio controls
+         --------------------------- */
+      const audio = document.getElementById("bg-audio");
+      const overlay = document.getElementById("play-overlay");
+      const playBtn = document.getElementById("play-btn");
+      const muteBtn = document.getElementById("mute-btn");
+      const audioControl = document.getElementById("audio-control");
+
+      audio.volume = 0.6;
+      audio.preload = "auto";
+
+      audio
+        .play()
+        .then(() => {
+          overlay.style.display = "none";
+          audioControl.style.display = "flex";
+        })
+        .catch(() => {
+          overlay.style.pointerEvents = "auto";
+        });
+
+      playBtn.addEventListener("click", () => {
+        audio
+          .play()
+          .then(() => {
+            overlay.style.display = "none";
+            audioControl.style.display = "flex";
+          })
+          .catch(() => {});
+      });
+
+      muteBtn.addEventListener("click", () => {
+        audio.muted = !audio.muted;
+        muteBtn.textContent = audio.muted ? "Bật âm" : "Tắt âm";
+      });
+
+      document.addEventListener("visibilitychange", () => {
+        if (document.hidden) audio.pause();
+        else audio.play().catch(() => {});
+      });
+
+      addEventListener("keydown", (e) => {
+        if (e.code === "Space") {
+          e.preventDefault();
+          if (overlay.style.display === "none") {
+            if (audio.paused) audio.play().catch(() => {});
+            else audio.pause();
+          } else {
+            playBtn.click();
+          }
+        }
+      });
+
+      // greeting ban đầu
+      setTimeout(() => {
+        showMessage("Xin chào bạn nhỏ 👩‍🎓🌷", 1500);
+      }, 900);
+
+      // danh sách câu động viên
+      const encouragements = [
+        "Cố lên nhé 🌷 Mọi chuyện rồi sẽ ổn thôi",
+        "Bạn làm tốt hơn bạn nghĩ đó 💙",
+        "Mệt rồi thì nghỉ một chút nha 🌙",
+        "Đừng áp lực quá, có mình ở đây 🌸",
+        "Rồi bạn sẽ mỉm cười lại thôi ☀️",
+      ];
+
+      let msgIndex = 0;
+
+      // cứ mỗi 10 giây hiện 1 câu
+      setInterval(() => {
+        showMessage(encouragements[msgIndex], 2000);
+        msgIndex = (msgIndex + 1) % encouragements.length;
+      }, 10000);
+    </script>
+  </body>
+</html>
